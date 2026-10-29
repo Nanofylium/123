@@ -1,0 +1,37 @@
+name: Semente.exe
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Instalar PyInstaller
+        run: python -m pip install pyinstaller==6.11.1
+      - name: Conferir o código
+        run: python -c "import sys; sys.path.insert(0, 'app'); import semente.nucleo, semente.janela; print('ok')"
+      - name: Gerar Semente.exe
+        run: >
+          pyinstaller --noconfirm --onefile --windowed --name Semente
+          --icon app/icone.ico --paths app app/semente_main.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Semente-windows
+          path: dist/Semente.exe
+      - name: Publicar na página de Releases (tags v*)
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${{ github.ref_name }}" dist/Semente.exe --title "Semente ${{ github.ref_name }}" --notes "Fórum dos leitores de Wallace Ross, com qarchis."
