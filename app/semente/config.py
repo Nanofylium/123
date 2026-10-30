@@ -14,11 +14,14 @@ ADMIN_RAIZ = "6e88963f0487a5244274fe9ed1521225809cedb3f3a585f7756fe87562af4628"
 # (o PC do autor com a porta liberada, ou um servidor barato rodando
 # "Semente.exe --servidor"). Sem pelo menos um, o fórum funciona só entre
 # computadores da mesma rede local. Formato: "endereco:porta".
+# O endereço é um nome (DNS), não um IP: assim o computador por trás dele pode
+# mudar sem gerar um .exe novo. Pontos extras vêm de LISTA_DE_PONTOS, no site.
 PONTOS_DE_ENCONTRO = [
-    # "sementes.ailigqarchi.com.br:47474",
+    "sementes.ailigqarchi.com.br:47474",
 ]
 
 SITE = "https://ailigqarchi.com.br"
+LISTA_DE_PONTOS = SITE + "/pontos.json"  # {"pontos": ["endereco:porta", ...]}
 AMAZON = ""  # link do livro completo, quando estiver publicado
 
 PORTA = 47474

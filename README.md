@@ -28,7 +28,13 @@ O fórum dos leitores de **Wallace Ross**, de Ailig Qarchi: um `.exe` que é red
 
 1. **Pegue o .exe.** Cada push gera o `Semente.exe` em *Actions → Semente.exe → Artifacts*. Uma tag `v1.0` publica o .exe na página *Releases*.
 2. **Entre como admin.** O usuário é `ailigqarchi` e a senha é a senha longa que foi entregue a você. Guarde essa senha num gerenciador de senhas e não a coloque neste repositório.
-3. **Ponto de encontro (importante).** Para leitores em casas diferentes se enxergarem, pelo menos um computador precisa ficar ligado e alcançável pela internet. Pode ser o seu PC com a porta TCP 47474 liberada no roteador, ou um servidor barato rodando `Semente.exe --servidor` (ou `python -m semente --servidor` na pasta `app`). Coloque o endereço em `PONTOS_DE_ENCONTRO`, em `app/semente/config.py`, e gere o .exe de novo. Sem isso, o fórum só funciona entre computadores da mesma rede local.
+3. **Ponto de encontro (importante).** O app já procura o ponto `sementes.ailigqarchi.com.br:47474`. Para ele existir:
+   - Escolha um computador que fique sempre ligado: o seu PC, ou um servidor gratuito ou barato (Oracle Cloud Always Free, por exemplo). Nele, rode `Semente.exe --servidor` no Windows ou `python3 -m semente --servidor` na pasta `app` no Linux.
+   - Libere a porta **TCP 47474** no roteador (redirecionamento para esse PC) ou no firewall do servidor.
+   - No painel de DNS do domínio ailigqarchi.com.br, crie o registro `sementes`: um registro **A** com o IP público da máquina, ou um **CNAME** para um nome de DNS dinâmico (DuckDNS, No-IP) se o IP da sua casa muda.
+   - Para ter mais de um ponto, liste-os em `site/pontos.json` e suba o arquivo no site. O app relê essa lista a cada hora, sem precisar de um .exe novo.
+
+   Sem um ponto no ar, o fórum só funciona entre computadores da mesma rede local.
 4. **Site.** Suba a pasta `site/` para ailigqarchi.com.br. Ela contém o `index.html` e a pasta `amostras/`.
 5. **Livro na Amazon.** Quando sair, preencha `AMAZON` em `config.py`.
 

@@ -16,7 +16,7 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from . import qarchi as qmod
-from .config import PORTA, PORTA_ANUNCIO, PONTOS_DE_ENCONTRO, ADMIN_RAIZ, VERSAO
+from .config import PORTA, PORTA_ANUNCIO, PONTOS_DE_ENCONTRO, LISTA_DE_PONTOS, ADMIN_RAIZ, VERSAO
 
 ID_REDE = ADMIN_RAIZ[:16]   # nós de fóruns diferentes não se misturam
 
@@ -296,8 +296,22 @@ class No:
             self.pendentes = []
         return entregues
 
+    def pontos_do_site(self):
+        """Lê a lista de pontos de encontro publicada no site do autor."""
+        try:
+            pontos = json.loads(_get(LISTA_DE_PONTOS, 10, 64 * 1024)).get("pontos", [])
+        except (OSError, ValueError, AttributeError):
+            return
+        for p in pontos[:20]:
+            if isinstance(p, str) and p.count(":") == 1 and len(p) < 120:
+                self.conhecer(p, fixo=True)
+
     def sincronizar_sempre(self):
+        ultima_lista = 0
         while True:
+            if time.time() - ultima_lista > 3600:
+                ultima_lista = time.time()
+                self.pontos_do_site()
             for par, d in list(self.pares.items()):
                 if not d.get("fixo") and not d.get("alcancavel"):
                     # par que só se apresentou: testa se é alcançável
