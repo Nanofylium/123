@@ -1,1 +1,1 @@
-"""Semente: o fórum dos leitores de Wallace Ross, com qarchis."""
+"""Semente: o fórum dos leitores de Wallace Ross."""

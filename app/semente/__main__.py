@@ -1,34 +1,21 @@
 import argparse
 import sys
-import time
 
 
 def main():
-    ap = argparse.ArgumentParser(prog="Semente", description="O fórum dos leitores de Wallace Ross, com qarchis.")
-    ap.add_argument("qarchi", nargs="?", help="um arquivo .qarchi para plantar")
-    ap.add_argument("--servidor", action="store_true", help="roda só o nó (ponto de encontro), sem janela")
-    ap.add_argument("--porta", type=int, default=None, help="porta do nó (padrão 47474)")
-    ap.add_argument("--importar", metavar="PASTA", help="coloca as amostras oficiais que estão nesta pasta")
+    ap = argparse.ArgumentParser(prog="Semente", description="O fórum dos leitores de Wallace Ross.")
+    ap.add_argument("--servidor", action="store_true",
+                    help="roda o servidor do fórum (PocketBase) nesta máquina, para o autor manter ligado")
+    ap.add_argument("--porta", type=int, default=8090, help="porta do servidor (padrão 8090)")
     a = ap.parse_args()
 
-    if a.servidor or a.importar:
-        from .nucleo import Nucleo
-        n = Nucleo(log=lambda m: print(time.strftime("%H:%M:%S"), m, flush=True))
-        if a.importar:
-            print("arquivos importados:", n.importar_pasta(a.importar))
-            if not a.servidor:
-                return
-        n.no.iniciar_servidor(a.porta)
-        n.iniciar_rede(True)
-        print("Ponto de encontro ativo. Libere a porta", n.no.porta, "(TCP) no roteador/firewall. Ctrl+C para sair.", flush=True)
-        try:
-            while True:
-                time.sleep(30)
-                print(time.strftime("%H:%M:%S"), f"pares {len(n.no.vivos())} · eventos v{n.banco.versao}", flush=True)
-        except KeyboardInterrupt:
-            return
+    if a.servidor:
+        from .servidor import rodar
+        rodar(porta=a.porta, log=lambda *m: print(*m, flush=True))
+        return
+
     from .janela import App
-    App(abrir_qarchi=a.qarchi).rodar()
+    App().rodar()
 
 
 if __name__ == "__main__":

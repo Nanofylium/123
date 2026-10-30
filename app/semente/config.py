@@ -2,35 +2,30 @@
 import os
 
 NOME = "Semente"
-VERSAO = "3.0"
+VERSAO = "4.0"
 
-# Chave pública do admin (o autor). Ela vem da senha de admin: só quem sabe a
-# senha consegue assinar como admin. Para trocar a senha, use o painel Admin
-# (ele passa a coroa para a chave nova), sem precisar mexer aqui.
-ADMIN_USUARIO = "ailigqarchi"
-ADMIN_RAIZ = "6e88963f0487a5244274fe9ed1521225809cedb3f3a585f7756fe87562af4628"
+# Endereço do servidor da Semente (o PocketBase que o autor mantém ligado).
+# É um nome (DNS), não um IP, então o computador por trás dele pode mudar sem
+# gerar um .exe novo. O Cloudflare Tunnel aponta esse nome para o laptop do
+# autor. Para testar contra um servidor local, defina a variável de ambiente
+# SEMENTE_SERVIDOR (ex.: http://127.0.0.1:8090) ou o campo "servidor" no
+# config.json da pasta do app.
+SERVIDOR = "https://sementes.ailigqarchi.com.br"
 
-# Pontos de encontro: computadores sempre ligados e alcançáveis pela internet
-# (o PC do autor com a porta liberada, ou um servidor barato rodando
-# "Semente.exe --servidor"). Sem pelo menos um, o fórum funciona só entre
-# computadores da mesma rede local. Formato: "endereco:porta".
-# O endereço é um nome (DNS), não um IP: assim o computador por trás dele pode
-# mudar sem gerar um .exe novo. Pontos extras vêm de LISTA_DE_PONTOS, no site.
-PONTOS_DE_ENCONTRO = [
-    "sementes.ailigqarchi.com.br:47474",
-]
+# Usuário do autor (admin) no servidor. Quem entra com esse usuário e a senha
+# de autor ganha o painel ✦ Admin. A senha é definida quando o servidor sobe
+# pela primeira vez (veja servidor.py), não fica aqui.
+AUTOR_USUARIO = "ailigqarchi"
 
 SITE = "https://ailigqarchi.com.br"
-LISTA_DE_PONTOS = SITE + "/pontos.json"  # {"pontos": ["endereco:porta", ...]}
 AMAZON = ""  # link do livro completo, quando estiver publicado
 
-PORTA = 47474
-PORTA_ANUNCIO = 47475
+# Versão do PocketBase que o modo servidor baixa e roda.
+POCKETBASE_VERSAO = "0.22.21"
 
 PASTA = os.path.join(os.path.expanduser("~"), "Semente_Wallace_Ross")
-PASTA_QARCHIS = os.path.join(PASTA, "qarchis")
+PASTA_DOWNLOADS = os.path.join(PASTA, "downloads")
 CONFIG = os.path.join(PASTA, "config.json")
-BANCO = os.path.join(PASTA, "forum.db")
 
 CATEGORIAS_PADRAO = ["Avisos do autor", "Wallace Ross", "Teorias e perguntas", "Leituras em grupo", "Qarchis", "Conversa livre"]
 REGRAS_PADRAO = """1. Respeito sempre. Nada de ataques, preconceito, assédio ou ameaças.

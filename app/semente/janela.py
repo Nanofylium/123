@@ -1,17 +1,21 @@
-"""A janela da Semente (Tkinter), com a paleta do site: noite azul e engrenagens douradas."""
+"""A janela da Semente (Tkinter), com a paleta do site: noite azul e engrenagens douradas.
+
+A Semente é um cliente: tudo que aparece aqui vem do servidor que o autor
+mantém ligado. Não há rede entre computadores dos leitores.
+"""
 import os
 import queue
 import sys
+import threading
 import time
 import webbrowser
 
 import tkinter as tk
 from tkinter import ttk, messagebox, simpledialog, filedialog
 
-from . import assets, qarchi as qmod
-from .config import COR, NOME, VERSAO, SITE, AMAZON, PASTA, PORTA
-from .nucleo import Nucleo, Erro, gravar_cfg
-from .oficial import QARCHI_OFICIAL
+from . import assets
+from .config import COR, NOME, VERSAO, SITE, AMAZON, PASTA, PASTA_DOWNLOADS
+from .nucleo import Nucleo, Erro
 
 C = COR
 FONTE = ("Segoe UI", 10) if sys.platform == "win32" else ("TkDefaultFont", 10)
@@ -72,7 +76,6 @@ def aplicar_tema(raiz):
     e.map("TEntry", bordercolor=[("focus", C["ouro"])])
     e.configure("TCombobox", fieldbackground=C["cartao"], foreground=C["texto"], background=C["cartao"], arrowcolor=C["ouro"])
     e.map("TCombobox", fieldbackground=[("readonly", C["cartao"])], foreground=[("readonly", C["texto"])])
-    e.configure("TSpinbox", fieldbackground=C["cartao"], foreground=C["texto"], arrowcolor=C["ouro"], background=C["cartao"])
     e.configure("TNotebook", background=C["fundo"], borderwidth=0, tabmargins=(6, 4, 6, 0))
     e.configure("TNotebook.Tab", background=C["painel"], foreground=C["suave"], padding=(16, 7), borderwidth=0, font=(FAM, 10))
     e.map("TNotebook.Tab", background=[("selected", C["fundo"])], foreground=[("selected", C["ouro"])])
@@ -96,7 +99,7 @@ def texto_tk(pai, **kw):
 
 
 class App:
-    def __init__(self, abrir_qarchi=None):
+    def __init__(self):
         self.registro = queue.Queue()
         self.n = Nucleo(log=lambda m: self.registro.put(f"{time.strftime('%H:%M:%S')}  {m}"))
         self.raiz = tk.Tk()
@@ -111,18 +114,11 @@ class App:
         self.raiz.iconphoto(True, self.img_icone)
         self.versao_vista = -1
         self.topico_aberto = None
-        self.abrir_qarchi = abrir_qarchi
         self._cabecalho()
         self.corpo = ttk.Frame(self.raiz)
         self.corpo.pack(fill="both", expand=True)
-        compartilhar = self.n.cfg.get("compartilhar")
-        if compartilhar is None:
-            compartilhar = messagebox.askyesno(
-                NOME, "Você aceita ajudar a espalhar as amostras e o fórum?\n\n"
-                      "Seu computador passa a enviar pedaços das amostras e posts do fórum para outros leitores "
-                      "(com limite de velocidade). Outros participantes verão o seu endereço de IP, como em qualquer torrent.\n\n"
-                      "Dá para mudar isso depois em Meu perfil.", parent=self.raiz)
-        self.n.iniciar_rede(compartilhar)
+        # conecta ao servidor e começa a sincronizar em segundo plano
+        self.n.iniciar()
         self.tela_entrada()
         self._girar(0)
         self._ciclo()
@@ -165,7 +161,7 @@ class App:
         caixa.place(relx=0.5, rely=0.48, anchor="center")
         tk.Label(caixa, image=self.img_icone, bg=C["cartao"]).pack()
         tk.Label(caixa, text="O fórum dos leitores", bg=C["cartao"], fg=C["ouro"], font=(FAM, 18, "bold")).pack(pady=(6, 0))
-        tk.Label(caixa, text="Converse com outros leitores e com o autor.\nEspalhe as amostras como sementes.",
+        tk.Label(caixa, text="Converse com outros leitores e com o autor,\ne baixe as amostras do livro.",
                  bg=C["cartao"], fg=C["suave"], font=(FAM, 10), justify="center").pack(pady=(4, 14))
         abas = ttk.Notebook(caixa)
         abas.pack(fill="x")
@@ -197,8 +193,6 @@ class App:
                                ("Senha (mínimo 10 caracteres)", cs, "•"), ("Repita a senha", cs2, "•")):
             ttk.Label(e2, text=rot).pack(anchor="w")
             ttk.Entry(e2, textvariable=var, show=show or "", width=34).pack(fill="x", pady=(2, 8))
-        ttk.Label(e2, text="Não existe \"esqueci minha senha\": sua conta é a sua senha.\nGuarde-a bem.",
-                  style="Suave.TLabel", justify="left").pack(anchor="w", pady=(0, 10))
 
         def cadastrar():
             if cs.get() != cs2.get():
@@ -210,7 +204,19 @@ class App:
             self.tela_principal()
         ttk.Button(e2, text="Criar conta", style="Ouro.TButton", command=cadastrar).pack(fill="x")
         ttk.Button(caixa, text="Só ler, sem entrar", command=self.tela_principal).pack(fill="x", pady=(12, 0))
+        self.lbl_conexao = ttk.Label(caixa, text="", bg=C["cartao"], fg=C["suave"], font=(FAM, 9))
+        self.lbl_conexao.pack(pady=(10, 0))
+        self._mostrar_conexao()
         (eu if not u.get() else es).focus_set()
+
+    def _mostrar_conexao(self):
+        if not hasattr(self, "lbl_conexao") or not self.lbl_conexao.winfo_exists():
+            return
+        if self.n.online:
+            self.lbl_conexao.config(text="● Conectado ao servidor da Semente.", foreground=C["ok"])
+        else:
+            self.lbl_conexao.config(text="○ Sem conexão com o servidor. O laptop do autor pode\nestar desligado agora. Você ainda pode tentar entrar.",
+                                    foreground=C["perigo"])
 
     # ------------------------------------------------------------ principal
     def tela_principal(self):
@@ -232,9 +238,6 @@ class App:
             self.aba_admin()
         self.aba_sobre()
         self.versao_vista = -1
-        if self.abrir_qarchi:
-            c, self.abrir_qarchi = self.abrir_qarchi, None
-            self.raiz.after(300, lambda: self.plantar_arquivo(c))
 
     def lateral(self, pai):
         lat = ttk.Frame(pai, style="Painel.TFrame", padding=(12, 12), width=200)
@@ -432,7 +435,7 @@ class App:
         ttk.Label(f, text="Categoria").pack(anchor="w", pady=(10, 0))
         cats = [c for c in self.n.estado.regras["categorias"] if c != "Avisos do autor" or self.n.e_admin()]
         cat = ttk.Combobox(f, values=cats, state="readonly")
-        cat.set(self.cat.get() if self.cat.get() in cats else cats[0])
+        cat.set(self.cat.get() if self.cat.get() in cats else (cats[0] if cats else ""))
         cat.pack(fill="x")
         ttk.Label(f, text="Texto").pack(anchor="w", pady=(10, 0))
         txt = texto_tk(f, height=12)
@@ -445,79 +448,135 @@ class App:
                 return self.erro(e)
             j.destroy()
             self.atualizar(forcar=True)
-            self.abrir_topico(ev["id"])
+            if ev:
+                self.abrir_topico(ev["id"])
         ttk.Button(f, text="Publicar", style="Ouro.TButton", command=publicar).pack(anchor="e", pady=(10, 0))
         tit.focus_set()
 
-    # ---------------- QARCHIS (estilo qBittorrent) ----------------
+    # ---------------- QARCHIS (downloads do servidor) ----------------
     def aba_qarchis(self):
         aba = ttk.Frame(self.abas)
         self.abas.add(aba, text="  Qarchis  ")
         barra = ttk.Frame(aba, padding=(8, 6))
         barra.pack(fill="x")
-        for txt, cmd in (("⇩ Plantar .qarchi", self.plantar_arquivo), ("✿ Cultivar novo", self.cultivar),
-                         ("▶ Iniciar", lambda: self.pausar(False)), ("⏸ Pausar", lambda: self.pausar(True)),
-                         ("✕ Remover", self.remover), ("📂 Abrir pasta", self.abrir_pasta), ("⇪ Exportar .qarchi", self.exportar)):
-            ttk.Button(barra, text=txt, command=cmd).pack(side="left", padx=2)
+        ttk.Button(barra, text="⇩ Baixar", style="Ouro.TButton", command=self.baixar).pack(side="left", padx=2)
+        ttk.Button(barra, text="✿ Enviar qarchi", command=self.enviar).pack(side="left", padx=2)
+        ttk.Button(barra, text="✕ Excluir", style="Perigo.TButton", command=self.excluir).pack(side="left", padx=2)
+        ttk.Button(barra, text="📂 Pasta de downloads", command=self.abrir_downloads).pack(side="left", padx=2)
         pan = ttk.PanedWindow(aba, orient="horizontal")
         pan.pack(fill="both", expand=True)
         lat = self.lateral(pan)
         pan.add(lat, weight=0)
-        ttk.Label(lat, text="STATUS", style="Secao.TLabel").pack(anchor="w", pady=(0, 6))
+        ttk.Label(lat, text="MOSTRAR", style="Secao.TLabel").pack(anchor="w", pady=(0, 6))
         self.q_filtro = tk.StringVar(value="todos")
-        for v, t in (("todos", "Todos"), ("baixando", "Baixando"), ("semeando", "Semeando"), ("completos", "Completos"),
-                     ("pausados", "Pausados"), ("forum", "No fórum (não plantados)")):
-            ttk.Radiobutton(lat, text=t, value=v, variable=self.q_filtro, command=lambda: self.atualizar(forcar=True)).pack(anchor="w", pady=1)
+        filtros = [("todos", "Todos"), ("disponiveis", "Disponíveis")]
+        if self.n.e_admin():
+            filtros.append(("aguardando", "Aguardando aprovação"))
+        for v, t in filtros:
+            ttk.Radiobutton(lat, text=t, value=v, variable=self.q_filtro,
+                            command=lambda: self.atualizar(forcar=True)).pack(anchor="w", pady=1)
         dir_ = ttk.PanedWindow(pan, orient="vertical")
         pan.add(dir_, weight=1)
         topo = ttk.Frame(dir_, padding=(8, 6))
         dir_.add(topo, weight=3)
-        cols = ("nome", "tam", "prog", "status", "pares", "down", "up", "cult")
+        cols = ("nome", "arqs", "situacao", "por")
         self.tv_q = ttk.Treeview(topo, columns=cols, show="headings")
-        for c, t, w in (("nome", "Nome", 300), ("tam", "Tamanho", 80), ("prog", "Progresso", 170), ("status", "Status", 120),
-                        ("pares", "Pares", 55), ("down", "Download", 85), ("up", "Upload", 85), ("cult", "Cultivado por", 130)):
+        for c, t, w in (("nome", "Nome", 320), ("arqs", "Arquivos", 90), ("situacao", "Situação", 200), ("por", "Enviado por", 160)):
             self.tv_q.heading(c, text=t)
-            self.tv_q.column(c, width=w, anchor="w" if c in ("nome", "status", "cult") else "center")
-        self.tv_q.tag_configure("oficial", foreground=C["ouro_claro"])
-        self.tv_q.tag_configure("forum", foreground=C["suave"])
+            self.tv_q.column(c, width=w, anchor="w" if c in ("nome", "situacao", "por") else "center")
+        self.tv_q.tag_configure("pendente", foreground=C["suave"])
         self.tv_q.pack(fill="both", expand=True)
-        self.tv_q.bind("<Double-1>", lambda e: self.duplo_qarchi())
+        self.tv_q.bind("<Double-1>", lambda e: self.baixar())
+        self.tv_q.bind("<<TreeviewSelect>>", lambda e: self.encher_detalhe_qarchi())
         det = ttk.Notebook(dir_)
         dir_.add(det, weight=2)
         self.q_geral = texto_tk(det, height=7, state="disabled")
-        self.q_arquivos = ttk.Treeview(det, columns=("arq", "tam"), show="headings")
+        self.q_arquivos = ttk.Treeview(det, columns=("arq",), show="headings")
         self.q_arquivos.heading("arq", text="Arquivo")
-        self.q_arquivos.heading("tam", text="Tamanho")
-        self.q_pares = ttk.Treeview(det, columns=("par", "visto"), show="headings")
-        self.q_pares.heading("par", text="Par")
-        self.q_pares.heading("visto", text="Visto há")
-        self.q_reg = texto_tk(det, height=7, state="disabled")
+        self.q_arquivos.column("arq", width=500, anchor="w")
         det.add(self.q_geral, text="Geral")
         det.add(self.q_arquivos, text="Arquivos")
-        det.add(self.q_pares, text="Pares")
-        det.add(self.q_reg, text="Registro")
 
     def qarchi_sel(self):
         return self.tv_q.focus() if hasattr(self, "tv_q") else None
 
-    def plantar_arquivo(self, caminho=None):
-        caminho = caminho or filedialog.askopenfilename(title="Abrir .qarchi", filetypes=[("Qarchi", "*.qarchi"), ("Todos", "*.*")], parent=self.raiz)
-        if not caminho:
-            return
-        try:
-            self.n.plantar_arquivo(caminho)
-        except (Erro, ValueError, OSError) as e:
-            return self.erro(e)
-        self.atualizar(forcar=True)
+    def _linhas_qarchi(self):
+        est = self.n.estado
+        f = self.q_filtro.get()
+        linhas = []
+        for qid, d in est.qarchis.items():
+            aprovado = d["aprovado"]
+            if f == "disponiveis" and not aprovado:
+                continue
+            if f == "aguardando" and aprovado:
+                continue
+            if aprovado:
+                sit = "Disponível para baixar"
+            elif self.n.e_admin() and d["evento"]["autor"] != self.n.pub:
+                sit = "Aguardando sua aprovação"
+            else:
+                sit = "Enviado — aguardando o autor"
+            linhas.append((qid, (d["qarchi"]["info"]["nome"], len(d["arquivos"]), sit, est.nome(d["evento"]["autor"])),
+                           () if aprovado else ("pendente",)))
+        return linhas
 
-    def cultivar(self):
+    def encher_qarchis(self):
+        tv = self.tv_q
+        sel = tv.focus()
+        tv.delete(*tv.get_children())
+        for iid, vals, tags in self._linhas_qarchi():
+            tv.insert("", "end", iid=iid, values=vals, tags=tags)
+        if sel and tv.exists(sel):
+            tv.focus(sel)
+            tv.selection_set(sel)
+        self.encher_detalhe_qarchi()
+
+    def encher_detalhe_qarchi(self):
+        if not hasattr(self, "q_geral") or not self.q_geral.winfo_exists():
+            return
+        est = self.n.estado
+        q = est.qarchis.get(self.qarchi_sel())
+        g = self.q_geral
+        g.configure(state="normal")
+        g.delete("1.0", "end")
+        self.q_arquivos.delete(*self.q_arquivos.get_children())
+        if q:
+            i = q["qarchi"]["info"]
+            g.insert("end", f"{i['nome']}\n\n{i.get('descricao', '')}\n\n"
+                            f"Arquivos: {len(q['arquivos'])}\nEnviado por: {est.nome(q['evento']['autor'])}\n"
+                            + ("Disponível para baixar." if q["aprovado"] else "Ainda não aprovado pelo autor."))
+            for nome in q["arquivos"]:
+                self.q_arquivos.insert("", "end", values=(nome,))
+        else:
+            g.insert("end", "Selecione um qarchi para ver os detalhes.\n\nUm qarchi é um conjunto de arquivos que o autor "
+                            "disponibiliza (por exemplo, as amostras do livro). Clique em Baixar para trazê-lo do servidor "
+                            "para o seu computador.")
+        g.configure(state="disabled")
+
+    def baixar(self):
+        qid = self.qarchi_sel()
+        if not qid or qid not in self.n.estado.qarchis:
+            return
+        nome = self.n.estado.qarchis[qid]["qarchi"]["info"]["nome"]
+        self.registro.put(f"{time.strftime('%H:%M:%S')}  Baixando '{nome}'...")
+
+        def tarefa():
+            try:
+                destino = self.n.baixar_qarchi(qid)
+            except Erro as e:
+                self.raiz.after(0, lambda: self.erro(e))
+                return
+            self.raiz.after(0, lambda: messagebox.showinfo(NOME, f"'{nome}' baixado em:\n{destino}", parent=self.raiz))
+        threading.Thread(target=tarefa, daemon=True).start()
+
+    def enviar(self):
         if not self.n.pub:
-            return self.erro("Entre na sua conta para cultivar um qarchi.")
+            return self.erro("Entre na sua conta para enviar um qarchi.")
         arquivos = filedialog.askopenfilenames(title="Escolha os arquivos do qarchi", parent=self.raiz)
         if not arquivos:
             return
-        j, f = self.janela("Cultivar qarchi")
-        ttk.Label(f, text="Cultivar um qarchi", style="Titulo.TLabel").pack(anchor="w")
+        j, f = self.janela("Enviar qarchi")
+        ttk.Label(f, text="Enviar um qarchi", style="Titulo.TLabel").pack(anchor="w")
         ttk.Label(f, text=f"{len(arquivos)} arquivo(s) · {tamanho(sum(os.path.getsize(a) for a in arquivos))}", style="Suave.TLabel").pack(anchor="w")
         ttk.Label(f, text="Nome").pack(anchor="w", pady=(10, 0))
         nome = ttk.Entry(f)
@@ -526,120 +585,39 @@ class App:
         ttk.Label(f, text="Descrição").pack(anchor="w", pady=(10, 0))
         desc = texto_tk(f, height=5)
         desc.pack(fill="x")
-        aviso = "" if self.n.e_admin() else "\nComo você não é o autor, o qarchi só passa a circular depois que ele aprovar."
-        ttk.Label(f, text="Só cultive o que você tem direito de compartilhar." + aviso, style="Suave.TLabel", justify="left").pack(anchor="w", pady=8)
+        aviso = "" if self.n.e_admin() else "\nComo você não é o autor, o qarchi só fica disponível depois que ele aprovar."
+        ttk.Label(f, text="Só envie o que você tem direito de compartilhar." + aviso, style="Suave.TLabel", justify="left").pack(anchor="w", pady=8)
 
         def ok():
-            try:
-                q = self.n.cultivar(list(arquivos), nome.get(), desc.get("1.0", "end"))
-            except (Erro, ValueError, OSError) as e:
-                return self.erro(e)
+            lista = list(arquivos)
+            nm, ds = nome.get(), desc.get("1.0", "end")
             j.destroy()
-            destino = filedialog.asksaveasfilename(title="Salvar o .qarchi para enviar a outras pessoas", defaultextension=".qarchi",
-                                                   initialfile=q["info"]["nome"] + ".qarchi", filetypes=[("Qarchi", "*.qarchi")], parent=self.raiz)
-            if destino:
-                qmod.salvar(q, destino)
-            self.atualizar(forcar=True)
-        ttk.Button(f, text="Cultivar e publicar no fórum", style="Ouro.TButton", command=ok).pack(anchor="e")
+            self.registro.put(f"{time.strftime('%H:%M:%S')}  Enviando '{nm}'...")
 
-    def pausar(self, sim):
-        q = self.qarchi_sel()
-        if q in self.n.no.lavouras:
-            self.n.pausar(q, sim)
-        self.atualizar(forcar=True)
+            def tarefa():
+                try:
+                    self.n.enviar_qarchi(lista, nm, ds)
+                except Erro as e:
+                    self.raiz.after(0, lambda: self.erro(e))
+                    return
+                self.raiz.after(0, lambda: (self.atualizar(forcar=True),
+                                            messagebox.showinfo(NOME, f"'{nm}' enviado ao servidor.", parent=self.raiz)))
+            threading.Thread(target=tarefa, daemon=True).start()
+        ttk.Button(f, text="Enviar ao servidor", style="Ouro.TButton", command=ok).pack(anchor="e")
 
-    def remover(self):
-        q = self.qarchi_sel()
-        if q in self.n.no.lavouras and messagebox.askyesno(NOME, "Parar de cultivar este qarchi? (os arquivos ficam na pasta)", parent=self.raiz):
-            self.acao(lambda: self.n.esquecer(q))
-
-    def abrir_pasta(self):
-        q = self.qarchi_sel()
-        lav = self.n.no.lavouras.get(q)
-        destino = lav.pasta if lav else os.path.join(PASTA, "qarchis")
-        if sys.platform == "win32":
-            os.startfile(destino)  # noqa: S606
-        else:
-            webbrowser.open("file://" + os.path.abspath(destino))
-
-    def exportar(self):
-        q = self.qarchi_sel()
-        lav = self.n.no.lavouras.get(q)
-        info = lav.q if lav else (self.n.estado.qarchis.get(q) or {}).get("qarchi")
-        if not info:
+    def excluir(self):
+        qid = self.qarchi_sel()
+        if not qid or qid not in self.n.estado.qarchis:
             return
-        destino = filedialog.asksaveasfilename(defaultextension=".qarchi", initialfile=info["info"]["nome"] + ".qarchi",
-                                               filetypes=[("Qarchi", "*.qarchi")], parent=self.raiz)
-        if destino:
-            qmod.salvar(info, destino)
+        if messagebox.askyesno(NOME, "Excluir este qarchi do servidor? Ele some para todos.", parent=self.raiz):
+            self.acao(lambda: self.n.excluir_qarchi(qid))
 
-    def duplo_qarchi(self):
-        q = self.qarchi_sel()
-        if q in self.n.no.lavouras:
-            return self.abrir_pasta()
-        dados_q = self.n.estado.qarchis.get(q)
-        if dados_q:
-            try:
-                self.n.plantar(dados_q["qarchi"])
-            except Erro as e:
-                return self.erro(e)
-            self.atualizar(forcar=True)
-
-    def encher_qarchis(self):
-        no, est = self.n.no, self.n.estado
-        f = self.q_filtro.get()
-        linhas = []
-        for qid, lav in no.lavouras.items():
-            completo = lav.completo()
-            st = "Pausado" if qid in no.pausados else ("Semeando" if no.porta else "Completo") if completo else "Baixando"
-            if not est.qarchi_liberado(qid) and qid != QARCHI_OFICIAL["qid"]:
-                st += " (aguarda autor)"
-            if f == "baixando" and not st.startswith("Baixando") or f == "semeando" and not st.startswith("Semeando") \
-                    or f == "completos" and not completo or f == "pausados" and not st.startswith("Pausado") or f == "forum":
-                continue
-            p = lav.progresso()
-            barra = "█" * int(p * 12) + "░" * (12 - int(p * 12)) + f" {p * 100:5.1f}%"
-            linhas.append((qid, (lav.info["nome"], tamanho(lav.total), barra, st, no.status.get(qid, {}).get("pares", 0),
-                                 tamanho(no.desce.bps()) + "/s" if not completo and qid not in no.pausados else "",
-                                 tamanho(no.sobe.bps()) + "/s" if no.porta else "", est.nome(lav.q["cultivador"])),
-                           ("oficial",) if qid == QARCHI_OFICIAL["qid"] else ()))
-        if f in ("todos", "forum"):
-            for qid, d in est.qarchis.items():
-                if qid in no.lavouras or not (est.qarchi_liberado(qid) or self.n.e_admin()):
-                    continue
-                total = sum(a["tamanho"] for a in d["qarchi"]["info"]["arquivos"])
-                st = "No fórum: clique 2x" if est.qarchi_liberado(qid) else "Aguarda aprovação"
-                linhas.append((qid, (d["qarchi"]["info"]["nome"], tamanho(total), "", st, "", "", "", est.nome(d["evento"]["autor"])), ("forum",)))
-        tv = self.tv_q
-        sel = tv.focus()
-        tv.delete(*tv.get_children())
-        for iid, vals, tags in linhas:
-            tv.insert("", "end", iid=iid, values=vals, tags=tags)
-        if sel and tv.exists(sel):
-            tv.focus(sel)
-            tv.selection_set(sel)
-        # detalhes
-        q = sel
-        lav = no.lavouras.get(q)
-        info = lav.q if lav else (est.qarchis.get(q) or {}).get("qarchi")
-        g = self.q_geral
-        g.configure(state="normal")
-        g.delete("1.0", "end")
-        self.q_arquivos.delete(*self.q_arquivos.get_children())
-        if info:
-            i = info["info"]
-            g.insert("end", f"{i['nome']}\n\n{i.get('descricao', '')}\n\nqid: {info['qid']}\nPeças: {len(i['pecas'])} de {tamanho(i['tamanho_peca'])}"
-                            + (f" · conferidas {sum(lav.tem)}" if lav else "") + f"\nCultivado por: {est.nome(info['cultivador'])}"
-                            + (f"\nPasta: {lav.pasta}" if lav else ""))
-            for a in i["arquivos"]:
-                self.q_arquivos.insert("", "end", values=(a["caminho"], tamanho(a["tamanho"])))
+    def abrir_downloads(self):
+        os.makedirs(PASTA_DOWNLOADS, exist_ok=True)
+        if sys.platform == "win32":
+            os.startfile(PASTA_DOWNLOADS)  # noqa: S606
         else:
-            g.insert("end", "Selecione um qarchi para ver os detalhes.\n\nUm .qarchi é como um .torrent: descreve arquivos peça por peça. "
-                            "Plante um para baixar de outras pessoas; cultive um para oferecer arquivos seus.")
-        g.configure(state="disabled")
-        self.q_pares.delete(*self.q_pares.get_children())
-        for p, d in no.vivos().items():
-            self.q_pares.insert("", "end", values=(p, f"{int(time.time() - d['visto'])} s"))
+            webbrowser.open("file://" + os.path.abspath(PASTA_DOWNLOADS))
 
     # ---------------- MEMBROS ----------------
     def aba_membros(self):
@@ -676,18 +654,18 @@ class App:
             for r in rs:
                 contagem[r["autor"]] = contagem.get(r["autor"], 0) + 1
         for pub, p in sorted(est.perfis.items(), key=lambda kv: (not est.e_admin(kv[0]), kv[1]["desde"])):
+            if pub in est.banidos and not self.n.e_admin():
+                continue
             if est.e_admin(pub):
                 sit, tags = "✦ Autor (admin)", ("admin",)
+            elif pub in est.banidos:
+                sit, tags = "Removido: " + (est.banidos[pub] or ""), ("banido",)
             elif est.regras.get("so_aprovados") and pub not in est.aprovados:
                 sit, tags = "Aguardando aprovação", ()
             else:
                 sit, tags = "Membro" + (" aprovado" if pub in est.aprovados else ""), ()
             tv.insert("", "end", iid=pub, values=(p["nome"], "@" + p["usuario"], time.strftime("%d/%m/%Y", time.localtime(p["desde"])),
                                                   contagem.get(pub, 0), sit), tags=tags)
-        if self.n.e_admin():
-            for pub, motivo in est.banidos.items():
-                if pub and not tv.exists(pub):
-                    tv.insert("", "end", iid=pub, values=(pub[:12] + "…", "", "", 0, "Removido: " + (motivo or "")), tags=("banido",))
         if sel and tv.exists(sel):
             tv.focus(sel)
             tv.selection_set(sel)
@@ -729,7 +707,7 @@ class App:
         self.so_aprov = tk.BooleanVar(value=self.n.estado.regras.get("so_aprovados", False))
         self.q_membros = tk.BooleanVar(value=self.n.estado.regras.get("qarchis_de_membros", True))
         ttk.Checkbutton(opc, text="Só membros aprovados por mim podem postar", variable=self.so_aprov, style="Fundo.TCheckbutton").pack(anchor="w")
-        ttk.Checkbutton(opc, text="Membros podem cultivar qarchis (com minha aprovação)", variable=self.q_membros, style="Fundo.TCheckbutton").pack(anchor="w")
+        ttk.Checkbutton(opc, text="Membros podem enviar qarchis (com minha aprovação)", variable=self.q_membros, style="Fundo.TCheckbutton").pack(anchor="w")
         ttk.Label(opc, text="Categorias (separadas por vírgula)").pack(anchor="w", pady=(8, 0))
         self.ent_cats = ttk.Entry(opc)
         self.ent_cats.insert(0, ", ".join(self.n.estado.regras["categorias"]))
@@ -760,69 +738,71 @@ class App:
             sobre.grid(row=2, column=1, sticky="w")
             ttk.Button(aba, text="Salvar perfil", style="Ouro.TButton",
                        command=lambda: self.acao(lambda: self.n.editar_perfil(nome.get(), sobre.get("1.0", "end")))).grid(row=3, column=1, sticky="w", pady=6)
-            ttk.Button(aba, text="Sair da conta", command=lambda: (self.n.sair(), self.tela_entrada())).grid(row=4, column=1, sticky="w")
+            ttk.Button(aba, text="Trocar minha senha", command=self.trocar_senha).grid(row=4, column=1, sticky="w")
+            ttk.Button(aba, text="Sair da conta", command=lambda: (self.n.sair(), self.tela_entrada())).grid(row=5, column=1, sticky="w", pady=6)
         else:
             ttk.Button(aba, text="Entrar ou criar conta", style="Ouro.TButton", command=self.tela_entrada).grid(row=0, column=0, sticky="w")
-        ttk.Separator(aba).grid(row=5, column=0, columnspan=2, sticky="we", pady=16)
-        ttk.Label(aba, text="Compartilhamento", style="Titulo.TLabel").grid(row=6, column=0, columnspan=2, sticky="w")
-        comp = tk.BooleanVar(value=self.n.cfg.get("compartilhar", False))
-        ttk.Checkbutton(aba, text="Ajudar a espalhar (enviar pedaços e posts para outros leitores)", variable=comp, style="Fundo.TCheckbutton",
-                        command=lambda: self.n.alternar_compartilhar(comp.get())).grid(row=7, column=0, columnspan=2, sticky="w")
-        kb = tk.IntVar(value=self.n.cfg.get("limite_kbps", 512))
-        ttk.Label(aba, text="Velocidade máxima de envio (KB/s)").grid(row=8, column=0, sticky="w", pady=4)
-        ttk.Spinbox(aba, from_=16, to=100000, textvariable=kb, width=10).grid(row=8, column=1, sticky="w")
+        ttk.Separator(aba).grid(row=6, column=0, columnspan=2, sticky="we", pady=16)
+        ttk.Label(aba, text="Servidor", style="Titulo.TLabel").grid(row=7, column=0, columnspan=2, sticky="w")
+        estado_txt = "● conectado" if self.n.online else "○ sem conexão agora"
+        ttk.Label(aba, text=f"A Semente fala com o servidor do autor:\n{self.n.servidor}   ({estado_txt})",
+                  style="Suave.TLabel", justify="left").grid(row=8, column=0, columnspan=2, sticky="w", pady=4)
+        ttk.Label(aba, text=f"Seus downloads ficam em {PASTA_DOWNLOADS}", style="Suave.TLabel").grid(row=9, column=0, columnspan=2, sticky="w", pady=8)
 
-        def salvar_rede():
-            self.n.cfg["limite_kbps"] = kb.get()
-            gravar_cfg(self.n.cfg)
-            self.n.no.configurar(kb.get(), self.n.cfg.get("conexoes", 6))
-        ttk.Button(aba, text="Aplicar", command=salvar_rede).grid(row=9, column=1, sticky="w")
-
-        def add_par():
-            e = simpledialog.askstring(NOME, f"Endereço de outro computador com a Semente (ex.: 203.0.113.5 ou 203.0.113.5:{PORTA}):", parent=self.raiz)
-            if e:
-                self.n.no.conhecer(e.strip(), fixo=True)
-                self.n.cfg.setdefault("pares", []).append(e.strip())
-                gravar_cfg(self.n.cfg)
-        ttk.Button(aba, text="Adicionar ponto de encontro", command=add_par).grid(row=10, column=1, sticky="w", pady=4)
-        ttk.Label(aba, text=f"Seus arquivos e o fórum ficam em {PASTA}", style="Suave.TLabel").grid(row=11, column=0, columnspan=2, sticky="w", pady=8)
+    def trocar_senha(self):
+        if not self.n.pub:
+            return
+        atual = simpledialog.askstring(NOME, "Sua senha atual:", show="•", parent=self.raiz)
+        if not atual:
+            return
+        nova = simpledialog.askstring(NOME, "Nova senha (mínimo 10 caracteres):", show="•", parent=self.raiz)
+        if not nova:
+            return
+        nova2 = simpledialog.askstring(NOME, "Repita a nova senha:", show="•", parent=self.raiz)
+        if nova != nova2:
+            return self.erro("As senhas não são iguais.")
+        try:
+            self.n.trocar_senha(atual, nova)
+        except Erro as e:
+            return self.erro(e)
+        messagebox.showinfo(NOME, "Senha trocada. Use a nova a partir de agora.", parent=self.raiz)
 
     # ---------------- ADMIN ----------------
     def aba_admin(self):
         aba = ttk.Frame(self.abas, padding=14)
         self.abas.add(aba, text="  ✦ Admin  ")
         ttk.Label(aba, text="Painel do autor", style="Titulo.TLabel").pack(anchor="w")
-        ttk.Label(aba, text="Tudo o que você faz aqui é assinado com a sua chave e obedecido por todos os computadores.",
+        ttk.Label(aba, text="O servidor garante que só você faz o que está aqui: aprovar, apagar, banir e mudar as regras.",
                   style="Suave.TLabel").pack(anchor="w", pady=(0, 10))
         ttk.Label(aba, text="Qarchis aguardando aprovação").pack(anchor="w")
-        self.tv_pend = ttk.Treeview(aba, columns=("nome", "por", "tam"), show="headings", height=6)
-        for c, t in (("nome", "Nome"), ("por", "Cultivado por"), ("tam", "Tamanho")):
+        self.tv_pend = ttk.Treeview(aba, columns=("nome", "por", "arqs"), show="headings", height=6)
+        for c, t in (("nome", "Nome"), ("por", "Enviado por"), ("arqs", "Arquivos")):
             self.tv_pend.heading(c, text=t)
         self.tv_pend.pack(fill="x")
         b = ttk.Frame(aba)
         b.pack(fill="x", pady=4)
-        ttk.Button(b, text="Baixar para conferir", command=lambda: self._pend(lambda q: self.n.plantar(self.n.estado.qarchis[q]["qarchi"]))).pack(side="left")
+        ttk.Button(b, text="Baixar para conferir", command=lambda: self._pend(self._baixar_pendente)).pack(side="left")
         ttk.Button(b, text="Aprovar", style="Ouro.TButton", command=lambda: self._pend(lambda q: self.n.admin("aprovar_qarchi", qid=q))).pack(side="left", padx=4)
         ttk.Button(b, text="Recusar e apagar", style="Perigo.TButton",
-                   command=lambda: self._pend(lambda q: self.n.apagar(self.n.estado.qarchis[q]["evento"]["id"]))).pack(side="left")
+                   command=lambda: self._pend(lambda q: self.n.excluir_qarchi(q))).pack(side="left")
         ttk.Label(aba, text="\nAviso no topo do fórum").pack(anchor="w")
         aviso = ttk.Entry(aba)
         aviso.insert(0, self.n.estado.aviso)
         aviso.pack(fill="x")
         ttk.Button(aba, text="Publicar aviso", command=lambda: self.acao(lambda: self.n.admin("aviso", texto=aviso.get().strip()[:300]))).pack(anchor="w", pady=4)
-        ttk.Label(aba, text="\nSenha de admin").pack(anchor="w")
 
-        def trocar():
-            s1 = simpledialog.askstring(NOME, "Nova senha de admin (mínimo 20 caracteres):", show="•", parent=self.raiz)
-            if not s1:
-                return
-            s2 = simpledialog.askstring(NOME, "Repita a nova senha:", show="•", parent=self.raiz)
-            if s1 != s2:
-                return self.erro("As senhas não são iguais.")
-            if messagebox.askyesno(NOME, "Trocar a senha de admin? A senha antiga deixa de valer para sempre.", parent=self.raiz):
-                self.acao(lambda: self.n.trocar_senha_admin(s1))
-                messagebox.showinfo(NOME, "Senha trocada. Use a nova a partir de agora.", parent=self.raiz)
-        ttk.Button(aba, text="Trocar senha de admin", command=trocar).pack(anchor="w")
+    def _baixar_pendente(self, qid):
+        nome = self.n.estado.qarchis.get(qid, {}).get("qarchi", {}).get("info", {}).get("nome", qid)
+        self.registro.put(f"{time.strftime('%H:%M:%S')}  Baixando '{nome}' para conferir...")
+        threading.Thread(target=lambda: self._tenta(lambda: self.n.baixar_qarchi(qid), nome), daemon=True).start()
+
+    def _tenta(self, funcao, nome):
+        try:
+            destino = funcao()
+        except Erro as e:
+            self.raiz.after(0, lambda: self.erro(e))
+            return
+        self.raiz.after(0, lambda: messagebox.showinfo(NOME, f"'{nome}' baixado em:\n{destino}", parent=self.raiz))
 
     def _pend(self, f):
         q = self.tv_pend.focus()
@@ -833,11 +813,14 @@ class App:
         if not hasattr(self, "tv_pend") or not self.tv_pend.winfo_exists():
             return
         est = self.n.estado
+        sel = self.tv_pend.focus()
         self.tv_pend.delete(*self.tv_pend.get_children())
         for qid, d in est.qarchis.items():
-            if not est.qarchi_liberado(qid) and d["evento"]["id"] not in est.apagados:
-                total = sum(a["tamanho"] for a in d["qarchi"]["info"]["arquivos"])
-                self.tv_pend.insert("", "end", iid=qid, values=(d["qarchi"]["info"]["nome"], est.nome(d["evento"]["autor"]), tamanho(total)))
+            if not d["aprovado"]:
+                self.tv_pend.insert("", "end", iid=qid, values=(d["qarchi"]["info"]["nome"], est.nome(d["evento"]["autor"]), len(d["arquivos"])))
+        if sel and self.tv_pend.exists(sel):
+            self.tv_pend.focus(sel)
+            self.tv_pend.selection_set(sel)
 
     # ---------------- SOBRE ----------------
     def aba_sobre(self):
@@ -850,25 +833,25 @@ class App:
         t.insert("end", "Semente\n", ("t",))
         t.insert("end", "O fórum dos leitores de Wallace Ross, de Ailig Qarchi.\n\n")
         t.insert("end", "Como funciona\n", ("t",))
-        t.insert("end", "• Não existe servidor central. Cada Semente guarda o fórum e o troca com as outras. Sua conta é derivada do seu usuário "
-                        "e da sua senha, e cada post é assinado por ela, então ninguém consegue se passar por você.\n"
-                        "• O autor é o admin: as regras, remoções e aprovações dele são assinadas e todos os computadores obedecem.\n"
-                        "• Qarchis são o \"torrent\" da Semente: arquivos divididos em peças conferidas por SHA-256. No fórum, só circula "
-                        "o que o autor publicou ou aprovou.\n• As amostras oficiais (6 idiomas) já vêm plantadas.\n\n")
+        t.insert("end", "• A Semente é um aplicativo comum que se conecta ao servidor que o autor mantém ligado. "
+                        "Tudo — contas, posts e qarchis — fica nesse servidor.\n"
+                        "• Quando o servidor do autor está no ar, a Semente acorda; quando não está, ela avisa e você tenta mais tarde.\n"
+                        "• O autor é o admin: só ele aprova e remove membros, apaga posts, muda as regras e aprova os qarchis. "
+                        "O próprio servidor garante isso.\n"
+                        "• Qarchis são conjuntos de arquivos que o autor disponibiliza, como as amostras do livro. "
+                        "Você os baixa do servidor para o seu computador.\n\n")
         t.insert("end", f"Site: {SITE}\n" + (f"Livro completo: {AMAZON}\n" if AMAZON else "Livro completo: na Amazon.\n"))
-        t.insert("end", f"\nVersão {VERSAO} · {PASTA}\n", ("m",))
+        t.insert("end", f"\nVersão {VERSAO} · servidor {self.n.servidor}\n", ("m",))
         t.configure(state="disabled")
 
     # ------------------------------------------------------------ ciclo
     def atualizar(self, forcar=False):
-        no = self.n.no
-        mudou = forcar or self.n.banco.versao != self.versao_vista
-        self.versao_vista = self.n.banco.versao
-        lavs = list(no.lavouras.values())
-        tem = sum(sum(l.tem) for l in lavs)
-        total = sum(len(l.tem) for l in lavs)
-        self.lbl_resumo.config(text=f"↓ {tamanho(no.desce.bps())}/s   ↑ {tamanho(no.sobe.bps())}/s   pares {len(no.vivos())}   "
-                                    f"peças {tem}/{total}   {'● compartilhando' if no.porta else '○ só baixando'}   ")
+        online = self.n.online
+        self.lbl_resumo.config(text=("● conectado   " if online else "○ sem conexão com o servidor   "),
+                               foreground=C["ok"] if online else C["perigo"])
+        self._mostrar_conexao()
+        mudou = forcar or self.n.versao != self.versao_vista
+        self.versao_vista = self.n.versao
         if not hasattr(self, "abas") or not self.abas.winfo_exists():
             return
         try:
@@ -880,17 +863,9 @@ class App:
                     self.desenhar_categorias()
                 self.encher_membros()
                 self.encher_admin()
-            self.encher_qarchis()
+                self.encher_qarchis()
         except tk.TclError:
             pass
-        novos = []
-        while not self.registro.empty():
-            novos.append(self.registro.get())
-        if novos and hasattr(self, "q_reg"):
-            self.q_reg.configure(state="normal")
-            self.q_reg.insert("end", "\n".join(novos) + "\n")
-            self.q_reg.see("end")
-            self.q_reg.configure(state="disabled")
 
     def _ciclo(self):
         try:

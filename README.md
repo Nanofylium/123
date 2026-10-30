@@ -1,66 +1,98 @@
 # Semente
 
-O fórum dos leitores de **Wallace Ross**, de Ailig Qarchi: um `.exe` que é rede social, fórum e cultivador de **qarchis** (o "torrent" próprio da Semente), sem servidor central.
+O fórum dos leitores de **Wallace Ross**, de Ailig Qarchi: um `.exe` que os leitores baixam e que se conecta ao **servidor que o autor mantém ligado**. É um app cliente comum — os leitores conversam, e o autor disponibiliza as amostras (**qarchis**) a partir do seu próprio servidor.
 
 ![Fórum](docs/telas/forum.png)
+
+## Como funciona
+
+- **O autor roda o servidor.** Numa máquina sempre ligada (o laptop do autor, ou um servidor gratuito como o Oracle Cloud Always Free), o autor roda `Semente.exe --servidor`. Isso baixa e sobe um **PocketBase** — um servidor pronto, de um projeto open-source no GitHub — com o fórum, as contas e os arquivos.
+- **Os leitores usam o cliente.** Cada leitor baixa o `Semente.exe`, abre, e o app se conecta ao servidor do autor pela internet (em `sementes.ailigqarchi.com.br`). Quando o servidor está no ar, a Semente acorda; quando não está, ela avisa e o leitor tenta mais tarde. Nada se instala ou se espalha sozinho entre as máquinas dos leitores: é só um cliente que se conecta a um endereço.
+- **O próprio servidor garante as regras.** Ninguém posta estando banido, ninguém se passa por outra pessoa e só o autor aprova, apaga, bane e muda as regras. Isso é imposto pelas regras de acesso do servidor, não só pela tela.
 
 ## O que a pessoa encontra ao abrir o Semente.exe
 
 | Aba | O que faz |
 |---|---|
-| **Entrar / Criar conta** | Cadastro com usuário e senha. A conta é a própria senha: a chave de assinatura é derivada do usuário e da senha (scrypt), então dá para entrar de qualquer computador. Não existe "esqueci a senha". |
+| **Entrar / Criar conta** | Cadastro com usuário e senha, guardados no servidor. Dá para entrar de qualquer computador. |
 | **Fórum** | Categorias, tópicos, respostas, curtidas, tópicos fixados e aviso do autor no topo. Os posts do autor levam o selo ✦ AUTOR. |
-| **Qarchis** | Funciona como o qBittorrent: lista com progresso, status, pares e velocidades; plantar `.qarchi`, cultivar novo, pausar, remover, abrir pasta e exportar. As amostras oficiais em 6 idiomas já vêm plantadas. |
-| **Membros** | Quem participa do fórum. O autor aprova, reprova, remove e readmite membros por aqui. |
-| **Regras** | As regras do fórum. Só o autor edita: texto, categorias, "só aprovados podem postar" e "membros podem cultivar qarchis". |
-| **Meu perfil** | Nome, "sobre", sair da conta, compartilhar sim ou não, limite de envio e pontos de encontro. |
-| **✦ Admin** | Só para o autor: aprovar ou recusar qarchis, publicar aviso e trocar a senha de admin. |
-
-## Como funciona por dentro
-
-- **Sem servidor central.** Cada Semente é um nó. Todos os nós guardam o fórum num SQLite local e trocam eventos entre si: na rede local, por anúncio UDP; pela internet, pelos pontos de encontro e pela troca de listas de pares.
-- **Tudo é assinado.** Perfil, tópico, resposta, curtida, qarchi e cada ação do admin são eventos com assinatura Schnorr (secp256k1, BIP-340), conferida por todos os nós. Ninguém consegue se passar por outra pessoa nem pelo autor.
-- **O autor manda.** A chave pública do admin está em `app/semente/config.py`. Regras, remoções, aprovações e apagamentos assinados por ela são obedecidos por todos os nós, e o conteúdo removido é apagado do disco de cada um. A senha de admin pode ser trocada pelo painel: a coroa passa para a chave nova por um evento assinado.
-- **Qarchis.** Um `.qarchi` é um JSON que descreve arquivos peça por peça, com SHA-256 de cada peça. O identificador (`qid`) é o hash da descrição, e o qarchi é assinado por quem o cultivou. Pela rede só circulam os qarchis publicados ou aprovados pelo autor. Os qarchis de membros esperam aprovação, e é isso que mantém o fórum legal.
-- **Fontes web.** O qarchi oficial também pode ser baixado do site, em `https://ailigqarchi.com.br/amostras/`. Cada peça é conferida do mesmo jeito.
+| **Qarchis** | Os conjuntos de arquivos que o autor disponibiliza (as amostras do livro, por exemplo). O leitor baixa do servidor para o seu computador. |
+| **Membros** | Quem participa do fórum. O autor aprova, reprova, remove e readmite por aqui. |
+| **Regras** | As regras do fórum. Só o autor edita: texto, categorias, "só aprovados podem postar" e "membros podem enviar qarchis". |
+| **Meu perfil** | Nome, "sobre", trocar a senha, sair da conta e o endereço do servidor. |
+| **✦ Admin** | Só para o autor: aprovar ou recusar qarchis e publicar o aviso do topo. |
 
 ## Para o autor: colocar no ar
 
-1. **Pegue o .exe.** Cada push gera o `Semente.exe` em *Actions → Semente.exe → Artifacts*. Uma tag `v1.0` publica o .exe na página *Releases*.
-2. **Entre como admin.** O usuário é `ailigqarchi` e a senha é a senha longa que foi entregue a você. Guarde essa senha num gerenciador de senhas e não a coloque neste repositório.
-3. **Ponto de encontro (importante).** O app já procura o ponto `sementes.ailigqarchi.com.br:47474`. Para ele existir:
-   - Escolha um computador que fique sempre ligado: o seu PC, ou um servidor gratuito ou barato (Oracle Cloud Always Free, por exemplo). Nele, rode `Semente.exe --servidor` no Windows ou `python3 -m semente --servidor` na pasta `app` no Linux.
-   - Libere a porta **TCP 47474** no roteador (redirecionamento para esse PC) ou no firewall do servidor.
-   - No painel de DNS do domínio ailigqarchi.com.br, crie o registro `sementes`: um registro **A** com o IP público da máquina, ou um **CNAME** para um nome de DNS dinâmico (DuckDNS, No-IP) se o IP da sua casa muda.
-   - Para ter mais de um ponto, liste-os em `site/pontos.json` e suba o arquivo no site. O app relê essa lista a cada hora, sem precisar de um .exe novo.
+### 1. Suba o servidor
 
-   Sem um ponto no ar, o fórum só funciona entre computadores da mesma rede local.
-4. **Site.** Suba a pasta `site/` para ailigqarchi.com.br. Ela contém o `index.html` e a pasta `amostras/`.
-5. **Livro na Amazon.** Quando sair, preencha `AMAZON` em `config.py`.
+Numa máquina que vá ficar ligada, rode:
 
-Se as amostras mudarem, rode `SEMENTE_SENHA_ADMIN='...' python3 tools/gerar_oficial.py`. Ele regera o qarchi oficial assinado. A senha não é gravada em lugar nenhum.
+```
+Semente.exe --servidor                     # Windows
+python3 -m semente --servidor              # a partir do código, na pasta app
+```
+
+Na primeira vez, o app:
+
+- baixa o PocketBase certo para o sistema (uma vez só);
+- cria as contas e as coleções do fórum;
+- gera as senhas e as guarda em `…/Semente_Wallace_Ross/servidor/SENHAS-GUARDE-BEM.txt`
+  (ou usa as que você passar nas variáveis `SEMENTE_ADMIN_SENHA` e `SEMENTE_AUTOR_SENHA`);
+- fica servindo em `http://127.0.0.1:8090`.
+
+Guarde o arquivo de senhas num lugar seguro. Dentro dele:
+- **PAINEL_POCKETBASE_SENHA** é para o painel de administração do servidor, em `http://127.0.0.1:8090/_/`.
+- **AUTOR_SENHA** é a senha do usuário `ailigqarchi`, com que você entra **no app** como autor (admin do fórum).
+
+### 2. Exponha o servidor na internet (Cloudflare Tunnel)
+
+O jeito recomendado, gratuito e sem abrir portas no roteador, é o **Cloudflare Tunnel**:
+
+1. Crie uma conta gratuita na Cloudflare e aponte o DNS do domínio `ailigqarchi.com.br` para ela (ou só delegue o subdomínio `sementes`).
+2. Instale o `cloudflared` na máquina do servidor e rode:
+   ```
+   cloudflared tunnel login
+   cloudflared tunnel create semente
+   cloudflared tunnel route dns semente sementes.ailigqarchi.com.br
+   cloudflared tunnel run --url http://127.0.0.1:8090 semente
+   ```
+3. Pronto: `https://sementes.ailigqarchi.com.br` passa a levar ao seu servidor, mesmo que o IP da sua casa mude, e sem mexer no roteador.
+
+Alternativa sem túnel: redirecione uma porta no roteador para a máquina e crie um registro **A** (ou um **CNAME** para DuckDNS/No-IP) em `sementes`. O túnel é mais simples e mais seguro.
+
+O endereço que o app usa está em `app/semente/config.py` (`SERVIDOR`). Para testar contra um servidor local, defina a variável de ambiente `SEMENTE_SERVIDOR`, por exemplo `http://127.0.0.1:8090`.
+
+### 3. Deixar sempre no ar (opcional)
+
+Para a Semente não depender do seu laptop estar aberto, rode o mesmo `--servidor` numa máquina sempre ligada (Oracle Cloud Always Free serve). O app não muda: só o endereço por trás de `sementes.ailigqarchi.com.br` passa a apontar para lá.
+
+### 4. O resto
+
+- **Pegue o .exe.** Cada push gera o `Semente.exe` em *Actions → Semente.exe → Artifacts*. Uma tag `v1.0` publica o .exe na página *Releases*.
+- **Site.** Suba a pasta `site/` para ailigqarchi.com.br.
+- **Amostras.** Entre no app como `ailigqarchi` e use a aba **Qarchis → Enviar qarchi** para publicar as amostras. Elas ficam disponíveis para todos os leitores baixarem.
+- **Livro na Amazon.** Quando sair, preencha `AMAZON` em `config.py`.
 
 ## Rodar a partir do código
 
 ```
 cd app
-python -m semente                 # janela
-python -m semente --servidor      # só o nó, para ponto de encontro
-python -m semente arquivo.qarchi  # abre um qarchi
+python -m semente                 # janela (cliente)
+python -m semente --servidor      # servidor (para o autor)
 ```
 
-Precisa só de Python 3.9+ com Tkinter. Não há dependências externas.
+Precisa de Python 3.9+ com Tkinter para a janela. Não há dependências externas (só a biblioteca padrão); o PocketBase é baixado pelo modo servidor.
 
 ## Limites conhecidos
 
-- Num sistema sem servidor, quem roda uma versão modificada do app pode guardar cópias do que foi apagado. As remoções valem para todos os nós que usam o app oficial.
+- A Semente só funciona quando o servidor do autor está no ar. Se o laptop estiver desligado, o app avisa e o leitor tenta mais tarde.
 - Contas novas são fáceis de criar. Contra abuso, o autor pode ligar "só membros aprovados podem postar" nas Regras.
 - As traduções das amostras (en, es, zh, hi, ar) foram feitas com ajuda de IA e merecem revisão humana.
 
 ## Pastas
 
-- `app/semente/`: o código do app. `cripto.py` faz as assinaturas, `dados.py` cuida dos eventos e do estado do fórum, `qarchi.py` do formato e das peças, `rede.py` dos nós e da sincronização, `nucleo.py` das ações e `janela.py` da interface.
+- `app/semente/`: o código. `api.py` fala com o servidor, `nucleo.py` tem as ações e monta o fórum, `janela.py` é a interface e `servidor.py` sobe o PocketBase no modo `--servidor`.
 - `site/`: o site de arquivo único e as amostras.
 - `traducoes/`: os textos traduzidos e o gerador dos PDF/EPUB.
-- `tools/`: o gerador do qarchi oficial.
 - `docs/telas/`: capturas de tela.
