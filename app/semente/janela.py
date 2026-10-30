@@ -204,7 +204,7 @@ class App:
             self.tela_principal()
         ttk.Button(e2, text="Criar conta", style="Ouro.TButton", command=cadastrar).pack(fill="x")
         ttk.Button(caixa, text="Só ler, sem entrar", command=self.tela_principal).pack(fill="x", pady=(12, 0))
-        self.lbl_conexao = ttk.Label(caixa, text="", bg=C["cartao"], fg=C["suave"], font=(FAM, 9))
+        self.lbl_conexao = tk.Label(caixa, text="", bg=C["cartao"], fg=C["suave"], font=(FAM, 9))
         self.lbl_conexao.pack(pady=(10, 0))
         self._mostrar_conexao()
         (eu if not u.get() else es).focus_set()
@@ -874,4 +874,13 @@ class App:
             self.raiz.after(1500, self._ciclo)
 
     def rodar(self):
+        # teste de fumaça: monta todas as telas e fecha sozinho (usado no CI)
+        if os.environ.get("SEMENTE_AUTOTESTE"):
+            self.raiz.after(300, self._autoteste)
         self.raiz.mainloop()
+
+    def _autoteste(self):
+        try:
+            self.tela_principal()
+        finally:
+            self.raiz.after(400, self.raiz.destroy)
