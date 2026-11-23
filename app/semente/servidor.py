@@ -125,9 +125,20 @@ def _json(nome):
     return {"name": nome, "type": "json", "required": False, "options": {"maxSize": 200000}}
 
 
-def _file(nome, maxsel, maxsize):
+def _num(nome):
+    return {"name": nome, "type": "number", "required": False, "options": {"min": None, "max": None, "noDecimal": True}}
+
+
+def _file(nome, maxsel, maxsize, mimes=None):
     return {"name": nome, "type": "file", "required": False,
-            "options": {"mimeTypes": [], "thumbs": None, "maxSelect": maxsel, "maxSize": maxsize, "protected": False}}
+            "options": {"mimeTypes": mimes or [], "thumbs": None, "maxSelect": maxsel, "maxSize": maxsize, "protected": False}}
+
+
+def _com_ids(spec, atual):
+    """Reaproveita os ids dos campos que já existem: rodar de novo não tenta recriá-los."""
+    ids = {f["name"]: f["id"] for f in atual.get("schema", []) if f.get("id")}
+    schema = [{**f, "id": ids[f["name"]]} if f["name"] in ids else f for f in spec.get("schema", [])]
+    return {**spec, "id": atual["id"], "schema": schema}
 
 
 def configurar_schema(cli):
@@ -135,8 +146,7 @@ def configurar_schema(cli):
     def upsert(spec):
         try:
             atual = cli.pedir("GET", "/api/collections/" + spec["name"])
-            spec = {**spec, "id": atual["id"]}
-            return cli.pedir("PATCH", "/api/collections/" + atual["id"], spec)["id"]
+            return cli.pedir("PATCH", "/api/collections/" + atual["id"], _com_ids(spec, atual))["id"]
         except api.ErroAPI as e:
             if e.codigo == 404:
                 return cli.pedir("POST", "/api/collections", spec)["id"]
@@ -144,8 +154,10 @@ def configurar_schema(cli):
 
     users = cli.pedir("GET", "/api/collections/users")
     schema = [f for f in users["schema"] if f["name"] in ("name", "avatar")]
-    schema += [_txt("sobre", maximo=600), _bool("aprovado"), _bool("banido"),
-               _txt("banido_motivo", maximo=300), _bool("autor")]
+    ids = {f["name"]: f["id"] for f in users["schema"] if f.get("id")}  # rodar de novo não recria campos
+    schema += [{**f, "id": ids[f["name"]]} if f["name"] in ids else f for f in
+               [_txt("sobre", maximo=600), _txt("local", maximo=40), _bool("aprovado"), _bool("banido"),
+                _txt("banido_motivo", maximo=300), _bool("autor")]]
     sem_escalar = ("@request.data.autor:isset = false && @request.data.aprovado:isset = false "
                    "&& @request.data.banido:isset = false && @request.data.banido_motivo:isset = false")
     cli.pedir("PATCH", "/api/collections/" + users["id"], {
@@ -196,10 +208,74 @@ def configurar_schema(cli):
             "updateRule": "@request.auth.autor = true",
             "deleteRule": "@request.auth.id = autor || @request.auth.autor = true"})
 
+    configurar_comunidade(cli, uid, pode_postar)
+
     if not cli.listar("config", por_pagina=1):
         cli.criar("config", {"regras_texto": REGRAS_PADRAO, "aviso": "", "so_aprovados": False,
                              "qarchis_de_membros": True, "categorias": list(CATEGORIAS_PADRAO)})
     return cfg_id
+
+
+IMAGENS = ["image/jpeg", "image/png", "image/webp", "image/gif"]
+CANAIS_PADRAO = [  # (nome, descrição, só o autor posta)
+    ("avisos-do-autor", "Novidades de Ailig Qarchi. Só o autor escreve aqui.", True),
+    ("apresente-se", "Diga quem você é, de onde lê e como achou Wallace Ross.", False),
+    ("conversa-geral", "Sobre a série, sobre livros, sobre a vida.", False),
+    ("teorias", "Teorias e perguntas sobre o que já foi lido. Marque spoilers com ||assim||.", False),
+    ("fan-art", "Desenhos, mapas, cartões e tudo o que a obra inspirar.", False),
+    ("ideias", "Ideias para a série, o site e a comunidade.", False),
+]
+
+
+def configurar_comunidade(cli, uid, pode_postar):
+    """A Comunidade do site (estilo Discord): canais, mensagens em tempo real,
+    reações, mensagens diretas e denúncias. Mesmas regras de segurança do fórum:
+    quem está banido não escreve, ninguém escreve em nome de outro, e só o autor
+    cria canais e modera."""
+    def upsert(spec):
+        try:
+            atual = cli.pedir("GET", "/api/collections/" + spec["name"])
+            return cli.pedir("PATCH", "/api/collections/" + atual["id"], _com_ids(spec, atual))["id"]
+        except api.ErroAPI as e:
+            if e.codigo == 404:
+                return cli.pedir("POST", "/api/collections", spec)["id"]
+            raise
+
+    so_autor = "@request.auth.autor = true"
+    canal_id = upsert({"name": "canais", "type": "base",
+                       "schema": [_txt("nome", True, 40), _txt("descricao", maximo=200), _num("ordem"), _bool("so_autor")],
+                       "listRule": "", "viewRule": "", "createRule": so_autor, "updateRule": so_autor, "deleteRule": so_autor})
+    upsert({"name": "mensagens", "type": "base",
+            "schema": [_rel("canal", canal_id, True), _txt("texto", maximo=4000), _rel("autor", uid, True),
+                       _txt("resposta", maximo=15), _file("imagem", 1, 5242880, IMAGENS), _bool("editado")],
+            "indexes": ["CREATE INDEX idx_msg_canal ON mensagens (canal, created)"],
+            "listRule": "autor.banido != true", "viewRule": "autor.banido != true",
+            "createRule": pode_postar + " && (@request.data.canal.so_autor != true || @request.auth.autor = true)",
+            "updateRule": ("@request.auth.id = autor && @request.auth.banido != true && @request.data.autor:isset = false "
+                           "&& @request.data.canal:isset = false"),
+            "deleteRule": "@request.auth.id = autor || @request.auth.autor = true"})
+    upsert({"name": "reacoes", "type": "base",
+            "schema": [_txt("mensagem", True, 15), _txt("emoji", True, 8), _rel("autor", uid, True)],
+            "indexes": ["CREATE UNIQUE INDEX idx_reacao ON reacoes (mensagem, emoji, autor)"],
+            "listRule": "", "viewRule": "",
+            "createRule": '@request.auth.id != "" && @request.auth.banido != true && @request.data.autor = @request.auth.id',
+            "updateRule": None, "deleteRule": "@request.auth.id = autor"})
+    upsert({"name": "diretas", "type": "base",
+            "schema": [_rel("de", uid, True), _rel("para", uid, True), _txt("texto", True, 4000)],
+            "indexes": ["CREATE INDEX idx_dm ON diretas (de, para, created)"],
+            "listRule": "@request.auth.id = de || @request.auth.id = para",
+            "viewRule": "@request.auth.id = de || @request.auth.id = para",
+            "createRule": ('@request.auth.id != "" && @request.auth.banido != true && @request.data.de = @request.auth.id '
+                           "&& @request.data.para != @request.auth.id && @request.data.para.banido != true"),
+            "updateRule": None, "deleteRule": "@request.auth.id = de"})
+    upsert({"name": "denuncias", "type": "base",
+            "schema": [_txt("alvo", True, 15), _txt("tipo", True, 20), _txt("motivo", maximo=500), _rel("autor", uid, True)],
+            "listRule": so_autor, "viewRule": so_autor,
+            "createRule": '@request.auth.id != "" && @request.data.autor = @request.auth.id',
+            "updateRule": None, "deleteRule": so_autor})
+    if not cli.listar("canais", por_pagina=1):
+        for i, (nome, desc, so) in enumerate(CANAIS_PADRAO):
+            cli.criar("canais", {"nome": nome, "descricao": desc, "ordem": i, "so_autor": so})
 
 
 def garantir_autor(cli, usuario, senha):

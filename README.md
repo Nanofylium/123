@@ -22,6 +22,12 @@ O fórum dos leitores de **Wallace Ross**, de Ailig Qarchi: um `.exe` que os lei
 | **Meu perfil** | Nome, "sobre", trocar a senha, sair da conta e o endereço do servidor. |
 | **✦ Admin** | Só para o autor: aprovar ou recusar qarchis e publicar o aviso do topo. |
 
+## A Comunidade do site (23/11/2026)
+
+O mesmo servidor também guarda a **Comunidade** do site-palácio (sala Comunidade, no estilo Discord): perfis com foto, cidade e bio, canais (`#avisos-do-autor`, `#apresente-se`, `#conversa-geral`, `#teorias`, `#fan-art`, `#ideias`), mensagens em tempo real com respostas, reações, imagens, @menções e spoiler entre `||barras||`, mensagens diretas entre leitores e com o autor, e denúncias que só o autor lê. As coleções (`canais`, `mensagens`, `reacoes`, `diretas`, `denuncias`) são criadas sozinhas pelo `--servidor`, com as regras no próprio PocketBase: ninguém escreve em nome de outro, banido não escreve, só o autor posta em `#avisos-do-autor`, cria canais e bane, e mensagem direta só é visível para as duas pessoas. Conta só com usuário e senha, sem e-mail. O site fala com `https://sementes.ailigqarchi.com.br` (o mesmo túnel abaixo); para mudar, edite `COMUNIDADE_URL` no CONFIG do site.
+
+Rodar o `--servidor` de novo agora preserva os dados: os campos que já existem são reaproveitados em vez de recriados.
+
 ## Para o autor: colocar no ar
 
 ### 1. Suba o servidor
