@@ -1,0 +1,23 @@
+name: Ligar_Comunidade.exe
+on:
+  push:
+    paths: ["comunidade/exe/**", ".github/workflows/comunidade.yml"]
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+      - name: Site do palácio
+        # o index.html do site fica fora do repositório (12 MB); sem ele o .exe sobe só o servidor
+        run: mkdir -p comunidade/exe/site && [ -f comunidade/exe/site/index.html ] || echo '<!doctype html><meta charset="utf-8"><title>Comunidade</title><p>Site não incluído nesta compilação.</p>' > comunidade/exe/site/index.html
+      - name: Compilar para Windows
+        working-directory: comunidade/exe
+        run: GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o Ligar_Comunidade.exe .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Ligar_Comunidade
+          path: comunidade/exe/Ligar_Comunidade.exe
