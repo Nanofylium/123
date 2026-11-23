@@ -1,0 +1,32 @@
+LIGAR A COMUNIDADE DE WALLACE ROSS (Windows)
+
+1. Extraia esta pasta em qualquer lugar (por exemplo, na Área de Trabalho).
+2. Dê dois cliques em Ligar_Comunidade.bat.
+   - Se o Windows avisar "O Windows protegeu o computador", clique em "Mais informações" e "Executar assim mesmo".
+3. Na primeira vez ele baixa o PocketBase e o túnel da Cloudflare (uns 40 MB) e pede uma senha para a sua conta de autor.
+   O usuário é sempre: ailigqarchi
+4. No fim aparece "A COMUNIDADE ESTÁ NO AR" com um endereço https://….trycloudflare.com.
+   O navegador abre sozinho nesse endereço: é o site inteiro, com a Comunidade funcionando.
+   Entre em Comunidade > ENTRAR com ailigqarchi e a sua senha, e monte o seu perfil em MEU PERFIL.
+5. Deixe a janela preta aberta. Fechou a janela, a Comunidade sai do ar (nada se perde: as conversas ficam guardadas).
+
+Onde ficam os dados: C:\Users\<você>\Comunidade_Wallace_Ross
+  - pb_data: o banco com perfis e mensagens (faça cópia de vez em quando)
+  - SENHAS-GUARDE-BEM.txt: a senha do painel de administração (http://127.0.0.1:8090/_/ , só neste computador)
+
+ENDEREÇO FIXO (para os leitores sempre acharem a Comunidade)
+O endereço trycloudflare.com muda toda vez que você liga. Para ter sempre https://sementes.ailigqarchi.com.br:
+  a) O domínio ailigqarchi.com.br precisa estar numa conta (grátis) da Cloudflare.
+  b) No painel da Cloudflare: Zero Trust > Networks > Tunnels > Create a tunnel > Cloudflared.
+     Dê o nome "comunidade" e copie o token (a sequência longa depois de "--token").
+  c) Em "Public Hostname": subdomínio sementes, domínio ailigqarchi.com.br, serviço HTTP, URL localhost:8090.
+  d) Na pasta C:\Users\<você>\Comunidade_Wallace_Ross crie dois arquivos de texto:
+       TUNEL-TOKEN.txt    com o token
+       ENDERECO-FIXO.txt  com https://sementes.ailigqarchi.com.br
+  e) Ligue de novo pelo Ligar_Comunidade.bat. O site publicado já procura a Comunidade nesse endereço.
+
+Para os leitores enquanto não houver endereço fixo: mande o endereço trycloudflare.com que aparece na janela
+(ele já fica copiado), ou o link do seu site com ?servidor=<endereço> no fim.
+
+Peças usadas (código aberto, do GitHub): PocketBase (github.com/pocketbase/pocketbase),
+cloudflared (github.com/cloudflare/cloudflared) e o SDK do PocketBase (github.com/pocketbase/js-sdk).
