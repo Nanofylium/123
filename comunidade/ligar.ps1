@@ -1,7 +1,7 @@
 ﻿# Liga a Comunidade de Wallace Ross neste computador (Windows).
-# 1) baixa o PocketBase 0.22.21 (github.com/pocketbase/pocketbase) e o bore (github.com/ekzhang/bore), ambos do GitHub;
+# 1) baixa o PocketBase 0.22.21 (github.com/pocketbase/pocketbase), do GitHub; o túnel usa o ssh que já vem no Windows;
 # 2) na primeira vez, cria o banco, os canais e a sua conta de autor (usuário ailigqarchi);
-# 3) liga o servidor e o site, e abre um túnel pelo bore.pub para os leitores chegarem até aqui.
+# 3) liga o servidor e o site, e abre um túnel pelo srv.us (github.com/pcarrier/srv.us), com https, para os leitores chegarem até aqui.
 # Tudo fica em %USERPROFILE%\Comunidade_Wallace_Ross. Para desligar, feche esta janela.
 $ErrorActionPreference = "Stop"
 try { [Console]::OutputEncoding = [Text.Encoding]::UTF8 } catch {}
@@ -11,12 +11,12 @@ $ProgressPreference = "SilentlyContinue"
 $Aqui   = Split-Path -Parent $MyInvocation.MyCommand.Path
 $Casa   = Join-Path $env:USERPROFILE "Comunidade_Wallace_Ross"
 $PB     = Join-Path $Casa "pocketbase.exe"
-$CF     = Join-Path $Casa "bore.exe"
+$Chave  = Join-Path $Casa "chave_tunel"
 $Dados  = Join-Path $Casa "pb_data"
 $Mig    = Join-Path $Casa "pb_migrations"
 $Pub    = Join-Path $Casa "pb_public"
 $Senhas = Join-Path $Casa "SENHAS-GUARDE-BEM.txt"
-$PortaF = Join-Path $Casa "PORTA-DO-TUNEL.txt"
+$EndF   = Join-Path $Casa "ENDERECO.txt"
 $LogCF  = Join-Path $Casa "tunel.log"
 $LogPB  = Join-Path $Casa "servidor.log"
 $Porta  = 8090
@@ -34,12 +34,16 @@ if (-not (Test-Path $PB)) {
   Expand-Archive -Path $zip -DestinationPath $Casa -Force
   Remove-Item $zip
 }
-if (-not (Test-Path $CF)) {
-  Diga "Baixando o túnel bore (uma vez só)..."
-  $zip = Join-Path $Casa "bore.zip"
-  Invoke-WebRequest "https://github.com/ekzhang/bore/releases/download/v0.6.0/bore-v0.6.0-x86_64-pc-windows-msvc.zip" -OutFile $zip -UseBasicParsing
-  Expand-Archive -Path $zip -DestinationPath $Casa -Force
-  Remove-Item $zip
+# remove o bore de versões anteriores (o antivírus reclamou dele)
+Remove-Item -Path (Join-Path $Casa "bore.exe"), (Join-Path $Casa "PORTA-DO-TUNEL.txt") -ErrorAction SilentlyContinue
+$SSH = (Get-Command ssh.exe -ErrorAction SilentlyContinue).Source
+$KEYGEN = (Get-Command ssh-keygen.exe -ErrorAction SilentlyContinue).Source
+if (-not $SSH -or -not $KEYGEN) {
+  Diga "Este Windows está sem o cliente SSH. Instale em: Configurações > Aplicativos > Recursos opcionais > Adicionar > Cliente OpenSSH, e rode de novo." Red
+  exit 1
+}
+if (-not (Test-Path $Chave)) {  # uma chave só da Comunidade: é ela que mantém o endereço sempre o mesmo
+  Start-Process -FilePath $KEYGEN -ArgumentList "-q -t ed25519 -N `"`" -C comunidade-wallace-ross -f `"$Chave`"" -NoNewWindow -Wait
 }
 
 # a configuração da Comunidade e o site vêm desta pasta (atualizam quando você baixar uma versão nova)
@@ -86,26 +90,28 @@ for ($i = 0; $i -lt 40; $i++) {
 }
 if (-not $ok) { Diga "O servidor não respondeu. Veja $LogPB.erro (talvez outro programa esteja usando a porta $Porta)." Red; exit 1 }
 
-# o túnel: bore.pub, sempre na mesma porta (sorteada na primeira vez e guardada), para o endereço não mudar
-function AbrirTunel($remota) {
+# o túnel: srv.us pelo ssh do Windows. O endereço vem da chave (sempre o mesmo) e tem https.
+$LoginGit = if (Test-Path (Join-Path $Casa "GITHUB.txt")) { (Get-Content (Join-Path $Casa "GITHUB.txt") -Raw).Trim() } else { "nomatch" }
+$ArgsSSH = "-T -i `"$Chave`" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=20 -o ServerAliveCountMax=3 -o ExitOnForwardFailure=yes -R 1:localhost:$Porta $LoginGit@srv.us"
+function AbrirTunel {
   Remove-Item -Path @($LogCF, "$LogCF.erro") -ErrorAction SilentlyContinue
-  $script:procCF = Start-Process -FilePath $CF -ArgumentList @("local", "$Porta", "--to", "bore.pub", "--port", "$remota") -NoNewWindow -PassThru -RedirectStandardOutput $LogCF -RedirectStandardError "$LogCF.erro"
-  for ($i = 0; $i -lt 20; $i++) {
+  $script:procCF = Start-Process -FilePath $SSH -ArgumentList $ArgsSSH -NoNewWindow -PassThru -RedirectStandardOutput $LogCF -RedirectStandardError "$LogCF.erro"
+  for ($i = 0; $i -lt 30; $i++) {
     Start-Sleep -Seconds 1
-    if ($script:procCF.HasExited) { return $false }
-    if (Select-String -Path @($LogCF, "$LogCF.erro") -Pattern "bore\.pub:\d+|remote_port" -Quiet -ErrorAction SilentlyContinue) { return $true }
+    $m = Select-String -Path @($LogCF, "$LogCF.erro") -Pattern "https://[a-z0-9.-]+\.srv\.us/?" -AllMatches -ErrorAction SilentlyContinue
+    if ($m) {
+      $urls = @($m | ForEach-Object { $_.Matches } | ForEach-Object { $_.Value.TrimEnd("/") })
+      $gh = $urls | Where-Object { $_ -like "*.gh.srv.us" } | Select-Object -First 1
+      return $(if ($gh) { $gh } else { $urls[0] })
+    }
+    if ($script:procCF.HasExited) { return $null }
   }
-  return -not $script:procCF.HasExited
+  return $null
 }
 Diga "Abrindo o túnel para a internet..."
-$procCF = $null; $url = $null
-$remota = if (Test-Path $PortaF) { [int](Get-Content $PortaF -Raw).Trim() } else { Get-Random -Minimum 20000 -Maximum 60000 }
-$abriu = AbrirTunel $remota
-if (-not $abriu) {  # a porta guardada estava ocupada no bore.pub: sorteia outra (o endereço muda desta vez)
-  for ($k = 0; $k -lt 4 -and -not $abriu; $k++) { $remota = Get-Random -Minimum 20000 -Maximum 60000; $abriu = AbrirTunel $remota }
-  if ($abriu -and (Test-Path $PortaF)) { Diga "A porta de sempre estava ocupada; desta vez o endereço é outro." Red }
-}
-if ($abriu) { Set-Content -Path $PortaF -Value $remota; $url = "http://bore.pub:$remota" }
+$procCF = $null
+$url = AbrirTunel
+if ($url) { Set-Content -Path $EndF -Value $url }
 
 Linha
 if ($url) {
@@ -113,8 +119,8 @@ if ($url) {
   Diga "  Site + Comunidade:  $url" Yellow
   Diga "  Entre com o usuário ailigqarchi e a sua senha."
   Diga ""
-  Diga "  Este endereço fica o mesmo toda vez que você ligar (porta guardada em PORTA-DO-TUNEL.txt)."
-  Diga "  Ele é http, sem cadeado: não use nele uma senha que você usa em outros lugares."
+  Diga "  Este endereço é o mesmo toda vez que você ligar (vem da chave guardada nesta pasta)."
+  if ($url -notlike "*.gh.srv.us") { Diga "  Para ele virar https://nanofylium.gh.srv.us, veja o passo opcional no LEIA.txt." }
   try { Set-Clipboard -Value $url; Diga "  (o endereço já está copiado: é só colar e mandar)" } catch {}
   Start-Process $url
 } else {
@@ -127,6 +133,12 @@ Linha
 Diga "  Deixe esta janela aberta enquanto quiser a Comunidade no ar." Yellow
 Diga "  Para desligar, feche a janela."
 Linha
-try { Wait-Process -Id $procPB.Id } finally {
+try {
+  # se a internet cair, o túnel volta sozinho (com o mesmo endereço)
+  while (-not $procPB.HasExited) {
+    Start-Sleep -Seconds 5
+    if ($procCF -and $procCF.HasExited) { Diga "Túnel caiu; religando..." DarkYellow; Start-Sleep -Seconds 3; $null = AbrirTunel }
+  }
+} finally {
   foreach ($p in @($procCF, $procPB)) { if ($p -and -not $p.HasExited) { try { Stop-Process -Id $p.Id -Force } catch {} } }
 }
